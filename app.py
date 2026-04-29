@@ -136,8 +136,6 @@ def index():
                         message = "1以上の数量を入力してください"
                     else:
                         add_ingredient_db(item, qty)
-                        message = "追加しました"                      
-
                         message = "食材を追加しました"
 
                 except ValueError:
@@ -215,6 +213,9 @@ def index():
                         missing[item] = required_qty - fridge_qty
             else:
                 message = "レシピが見つかりません"
+                
+        fridge = get_fridge()
+        recipes = get_recipes()
 
        
 
