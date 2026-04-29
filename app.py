@@ -3,8 +3,9 @@ import sqlite3
 import os
 
 app = Flask(__name__)
+init_db()
 
-DB_FILE = "recipe.db"
+DB_FILE = "/tmp/recipe.db"
 
 def init_db():
     conn = sqlite3.connect(DB_FILE)
