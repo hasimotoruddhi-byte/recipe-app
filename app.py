@@ -1,14 +1,17 @@
 from flask import Flask, request, render_template_string
-import sqlite3
+import psycopg2
 import os
 
 app = Flask(__name__)
 
 
-DB_FILE = "/tmp/recipe.db"
+DATABASE_URL = os.environ.get("DATABASE_URL")
+
+def get_conn():
+    return psycopg2.connect(DATABASE_URL)
 
 def init_db():
-    conn = sqlite3.connect(DB_FILE)
+    conn = get_conn()
     cur = conn.cursor()
 
     # 食材テーブル
@@ -35,23 +38,29 @@ init_db()
 
 #食材追加
 def add_ingredient_db(item, qty):
-    conn = sqlite3.connect(DB_FILE)
+    conn = get_conn()
     cur = conn.cursor()
 
-    cur.execute("SELECT quantity FROM fridge WHERE name=?", (item,))
+    cur.execute("SELECT quantity FROM fridge WHERE name=%s", (item,))
     row = cur.fetchone()
 
     if row:
-        cur.execute("UPDATE fridge SET quantity = quantity + ? WHERE name=?", (qty, item))
+        cur.execute(
+            "UPDATE fridge SET quantity = quantity + %s WHERE name=%s",
+            (qty, item)
+        )
     else:
-        cur.execute("INSERT INTO fridge (name, quantity) VALUES (?, ?)", (item, qty))
+        cur.execute(
+            "INSERT INTO fridge (name, quantity) VALUES (%s, %s)",
+            (item, qty)
+        )
 
     conn.commit()
     conn.close()
 
 #食材取得
 def get_fridge():
-    conn = sqlite3.connect(DB_FILE)
+    conn = get_conn()
     cur = conn.cursor()
 
     cur.execute("SELECT name, quantity FROM fridge")
@@ -77,7 +86,7 @@ def add_recipe_db(name, ingredient_dict):
 
 #レシピ取得
 def get_recipes():
-    conn = sqlite3.connect(DB_FILE)
+    conn = get_conn()
     cur = conn.cursor()
 
     cur.execute("SELECT name, ingredient, quantity FROM recipes")
@@ -93,17 +102,20 @@ def get_recipes():
 
 #食材削除
 def delete_ingredient_db(item, qty):
-    conn = sqlite3.connect(DB_FILE)
+    conn = get_conn()
     cur = conn.cursor()
 
-    cur.execute("SELECT quantity FROM fridge WHERE name=?", (item,))
+    cur.execute("SELECT quantity FROM fridge WHERE name=%s", (item,))
     row = cur.fetchone()
 
     if row:
         if row[0] > qty:
-            cur.execute("UPDATE fridge SET quantity = quantity - ? WHERE name=?", (qty, item))
+            cur.execute(
+                "UPDATE fridge SET quantity = quantity - %s WHERE name=%s",
+                (qty, item)
+            )
         else:
-            cur.execute("DELETE FROM fridge WHERE name=?", (item,))
+            cur.execute("DELETE FROM fridge WHERE name=%s", (item,))
 
     conn.commit()
     conn.close()
