@@ -1,39 +1,119 @@
 from flask import Flask, request, render_template_string
-import json
+import sqlite3
 import os
 
 app = Flask(__name__)
 
-DATA_FILE = "C:/Users/User/Desktop/recipe_app/data.json"
+DB_FILE = "recipe.db"
 
-def load_data():
-    if not os.path.exists(DATA_FILE):
-        return {"fridge": {}, "recipes": {}}
+def init_db():
+    conn = sqlite3.connect(DB_FILE)
+    cur = conn.cursor()
 
-    with open(DATA_FILE, "r", encoding="utf-8") as f:
-        data = json.load(f)
+    # 食材テーブル
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS fridge (
+        name TEXT PRIMARY KEY,
+        quantity INTEGER
+    )
+    """)
 
-    # fridgeを必ずdictにする（ここ強化）
-    if not isinstance(data.get("fridge"), dict):
-        data["fridge"] = {}
+    # レシピテーブル
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS recipes (
+        name TEXT,
+        ingredient TEXT,
+        quantity INTEGER
+    )
+    """)
 
-    # recipesも同様
-    if not isinstance(data.get("recipes"), dict):
-        data["recipes"] = {}
+    conn.commit()
+    conn.close()
 
-    return data
+#食材追加
+def add_ingredient_db(item, qty):
+    conn = sqlite3.connect(DB_FILE)
+    cur = conn.cursor()
 
-def save_data(data):
-    with open(DATA_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+    cur.execute("SELECT quantity FROM fridge WHERE name=?", (item,))
+    row = cur.fetchone()
+
+    if row:
+        cur.execute("UPDATE fridge SET quantity = quantity + ? WHERE name=?", (qty, item))
+    else:
+        cur.execute("INSERT INTO fridge (name, quantity) VALUES (?, ?)", (item, qty))
+
+    conn.commit()
+    conn.close()
+
+#食材取得
+def get_fridge():
+    conn = sqlite3.connect(DB_FILE)
+    cur = conn.cursor()
+
+    cur.execute("SELECT name, quantity FROM fridge")
+    rows = cur.fetchall()
+
+    conn.close()
+
+    return {name: qty for name, qty in rows}
+
+#レシピ登録
+def add_recipe_db(name, ingredient_dict):
+    conn = sqlite3.connect(DB_FILE)
+    cur = conn.cursor()
+
+    for food, qty in ingredient_dict.items():
+        cur.execute(
+            "INSERT INTO recipes (name, ingredient, quantity) VALUES (?, ?, ?)",
+            (name, food, qty)
+        )
+
+    conn.commit()
+    conn.close()
+
+#レシピ取得
+def get_recipes():
+    conn = sqlite3.connect(DB_FILE)
+    cur = conn.cursor()
+
+    cur.execute("SELECT name, ingredient, quantity FROM recipes")
+    rows = cur.fetchall()
+
+    conn.close()
+
+    recipes = {}
+    for name, ing, qty in rows:
+        recipes.setdefault(name, {})[ing] = qty
+
+    return recipes
+
+#食材削除
+def delete_ingredient_db(item, qty):
+    conn = sqlite3.connect(DB_FILE)
+    cur = conn.cursor()
+
+    cur.execute("SELECT quantity FROM fridge WHERE name=?", (item,))
+    row = cur.fetchone()
+
+    if row:
+        if row[0] > qty:
+            cur.execute("UPDATE fridge SET quantity = quantity - ? WHERE name=?", (qty, item))
+        else:
+            cur.execute("DELETE FROM fridge WHERE name=?", (item,))
+
+    conn.commit()
+    conn.close()
+
 
 @app.route("/", methods=["GET", "POST"])
 def index():
-    data = load_data()
-
     message=""
     missing = None
     selected_recipe = ""
+    
+    fridge = get_fridge()
+    recipes = get_recipes()
 
     if request.method == "POST":
         action = request.form.get("action")
@@ -52,10 +132,8 @@ def index():
                     if qty <= 0:
                         message = "1以上の数量を入力してください"
                     else:
-                        if item in data["fridge"]:
-                            data["fridge"][item] += qty
-                        else:
-                            data["fridge"][item] = qty
+                        add_ingredient_db(item, qty)
+                        message = "追加しました"                      
 
                         message = "食材を追加しました"
 
@@ -75,15 +153,9 @@ def index():
 
                     if qty <= 0:
                         message = "1以上の数量を入力してください"
-
-                    elif item in data["fridge"]:
-                        if data["fridge"][item] < qty:
-                            message = "在庫より多く削除できません"
-                        else:
-                            data["fridge"][item] -= qty
-
-                            if data["fridge"][item] == 0:
-                                del data["fridge"][item]
+                    else:
+                        delete_ingredient_db(item, qty)
+                        message = "削除しました"
 
                 except ValueError:
                     message = "数量は数字で入力してください"
@@ -116,7 +188,7 @@ def index():
 
                     else:
                         # 正常時のみ登録
-                        data["recipes"][name] = ingredient_dict
+                        add_recipe_db(name, ingredient_dict)
                         message = "レシピを登録しました"
 
                 except ValueError:
@@ -127,9 +199,9 @@ def index():
             selected_recipe = request.form.get("recipe_select")
 
             # レシピ存在チェック（ここが追加ポイント）
-            if selected_recipe in data["recipes"]:
-                recipe_ingredients = data["recipes"][selected_recipe]
-                fridge = data["fridge"]
+            if selected_recipe in recipes:
+                recipe_ingredients = recipes[selected_recipe]
+                fridge = get_fridge()
 
                 missing = {}
 
@@ -141,7 +213,7 @@ def index():
             else:
                 message = "レシピが見つかりません"
 
-        save_data(data)
+       
 
     html = """
     <h1>レシピ管理アプリ</h1>
@@ -206,13 +278,18 @@ def index():
 
     return render_template_string(
         html,
-        recipes=data["recipes"].keys(),
-        fridge=data["fridge"],
+        recipes=recipes.keys(),
+        fridge=fridge,
         missing=missing,
         selected_recipe=selected_recipe,
         message=message
     )
 
 if __name__ == "__main__":
+    init_db()
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
+    
+if __name__ == "__main__":
+    init_db()
+    app.run(debug=True)
