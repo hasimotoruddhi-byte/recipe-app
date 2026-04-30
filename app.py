@@ -72,12 +72,12 @@ def get_fridge():
 
 #レシピ登録
 def add_recipe_db(name, ingredient_dict):
-    conn = sqlite3.connect(DB_FILE)
+    conn = get_conn()
     cur = conn.cursor()
 
     for food, qty in ingredient_dict.items():
         cur.execute(
-            "INSERT INTO recipes (name, ingredient, quantity) VALUES (?, ?, ?)",
+            "INSERT INTO recipes (name, ingredient, quantity) VALUES (%s, %s, %s)",
             (name, food, qty)
         )
 
